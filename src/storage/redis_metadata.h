@@ -204,7 +204,13 @@ class Metadata {
 
 class HashMetadata : public Metadata {
  public:
+  uint64_t generation = 0;
+
   explicit HashMetadata(bool generate_version = true) : Metadata(kRedisHash, generate_version) {}
+
+  void Encode(std::string *dst) const override;
+  using Metadata::Decode;
+  [[nodiscard]] rocksdb::Status Decode(Slice *input) override;
 };
 
 class SetMetadata : public Metadata {

@@ -334,6 +334,23 @@ bool Metadata::IsEmptyableType() const {
 
 bool Metadata::Expired() const { return ExpireAt(util::GetTimeStampMS()); }
 
+void HashMetadata::Encode(std::string *dst) const {
+  Metadata::Encode(dst);
+  PutFixed64(dst, generation);
+}
+
+rocksdb::Status HashMetadata::Decode(Slice *input) {
+  if (auto s = Metadata::Decode(input); !s.ok()) {
+    return s;
+  }
+  if (input->size() >= sizeof(uint64_t)) {
+    GetFixed64(input, &generation);
+  } else {
+    generation = 0;
+  }
+  return rocksdb::Status::OK();
+}
+
 ListMetadata::ListMetadata(bool generate_version)
     : Metadata(kRedisList, generate_version), head(UINT64_MAX / 2), tail(head) {}
 

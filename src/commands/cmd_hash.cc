@@ -258,6 +258,68 @@ class CommandHMSet : public Commander {
   std::vector<FieldValue> field_values_;
 };
 
+class CommandHMSetCAS : public Commander {
+ public:
+  Status Parse(const std::vector<std::string> &args) override {
+    if (args.size() < 7 || (args.size() - 5) % 2 != 0) {
+      return {Status::RedisParseErr, errWrongNumOfArguments};
+    }
+    if (util::EqualICase(args[2], "UPSERT")) {
+      mode_ = HashCasMode::kUpsert;
+    } else if (util::EqualICase(args[2], "CREATE_ONLY")) {
+      mode_ = HashCasMode::kCreateOnly;
+    } else if (util::EqualICase(args[2], "UPDATE_ONLY")) {
+      mode_ = HashCasMode::kUpdateOnly;
+    } else if (util::EqualICase(args[2], "REPLACE")) {
+      mode_ = HashCasMode::kReplace;
+    } else if (util::EqualICase(args[2], "INSERT") || util::EqualICase(args[2], "INSERT_REPLACE")) {
+      mode_ = HashCasMode::kInsertReplace;
+    } else {
+      return {Status::RedisParseErr, errInvalidSyntax};
+    }
+
+    if (args[3].empty()) {
+      expect_gen_ = -1;
+    } else {
+      auto parsed_gen = ParseInt<int64_t>(args[3], 10);
+      if (!parsed_gen) {
+        return {Status::RedisParseErr, errValueNotInteger};
+      }
+      expect_gen_ = *parsed_gen;
+    }
+
+    auto parsed_ttl = ParseInt<int64_t>(args[4], 10);
+    if (!parsed_ttl || *parsed_ttl < 0) {
+      return {Status::RedisParseErr, errValueNotInteger};
+    }
+    ttl_ms_ = static_cast<uint64_t>(*parsed_ttl) * 1000;
+
+    field_values_.reserve((args.size() - 5) / 2);
+    for (size_t i = 5; i < args.size(); i += 2) {
+      field_values_.emplace_back(args[i], args[i + 1]);
+    }
+    return Commander::Parse(args);
+  }
+
+  Status Execute(Server *srv, Connection *conn, std::string *output) override {
+    int64_t ret_gen = -1;
+    redis::Hash hash_db(srv->storage, conn->GetNamespace());
+    engine::Context ctx(srv->storage);
+    auto s = hash_db.MSetCAS(ctx, args_[1], field_values_, mode_, expect_gen_, ttl_ms_, &ret_gen);
+    if (!s.ok()) {
+      return {Status::RedisExecErr, s.ToString()};
+    }
+    *output = redis::Integer(ret_gen);
+    return Status::OK();
+  }
+
+ private:
+  HashCasMode mode_ = HashCasMode::kUpsert;
+  int64_t expect_gen_ = -1;
+  uint64_t ttl_ms_ = 0;
+  std::vector<FieldValue> field_values_;
+};
+
 class CommandHKeys : public Commander {
  public:
   Status Execute(Server *srv, Connection *conn, std::string *output) override {
@@ -456,6 +518,7 @@ REDIS_REGISTER_COMMANDS(Hash, MakeCmdAttr<CommandHGet>("hget", 3, "read-only", 1
                         MakeCmdAttr<CommandHLen>("hlen", 2, "read-only", 1, 1, 1),
                         MakeCmdAttr<CommandHMGet>("hmget", -3, "read-only", 1, 1, 1),
                         MakeCmdAttr<CommandHMSet>("hmset", -4, "write", 1, 1, 1),
+                        MakeCmdAttr<CommandHMSetCAS>("hmsetcas", -7, "write", 1, 1, 1),
                         MakeCmdAttr<CommandHKeys>("hkeys", 2, "read-only slow", 1, 1, 1),
                         MakeCmdAttr<CommandHVals>("hvals", 2, "read-only slow", 1, 1, 1),
                         MakeCmdAttr<CommandHGetAll>("hgetall", 2, "read-only slow", 1, 1, 1),

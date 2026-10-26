@@ -39,6 +39,14 @@ struct FieldValue {
 
 enum class HashFetchType { kAll = 0, kOnlyKey = 1, kOnlyValue = 2 };
 
+enum class HashCasMode {
+  kUpsert = 0,
+  kCreateOnly = 1,
+  kUpdateOnly = 2,
+  kReplace = 3,
+  kInsertReplace = 4,
+};
+
 namespace redis {
 
 class Hash : public SubKeyScanner {
@@ -57,6 +65,8 @@ class Hash : public SubKeyScanner {
                               double *new_value);
   rocksdb::Status MSet(engine::Context &ctx, const Slice &user_key, const std::vector<FieldValue> &field_values,
                        bool nx, uint64_t *added_cnt);
+  rocksdb::Status MSetCAS(engine::Context &ctx, const Slice &user_key, const std::vector<FieldValue> &field_values,
+                          HashCasMode mode, int64_t expect_gen, uint64_t ttl_ms, int64_t *ret_gen);
   rocksdb::Status RangeByLex(engine::Context &ctx, const Slice &user_key, const RangeLexSpec &spec,
                              std::vector<FieldValue> *field_values);
   rocksdb::Status MGet(engine::Context &ctx, const Slice &user_key, const std::vector<Slice> &fields,
